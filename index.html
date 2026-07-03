@@ -141,9 +141,9 @@
   .toggle button.active{color:var(--ink)}
   .toggle button:focus-visible{outline:2px solid var(--sage)}
   .routine-panels{position:relative}
-  .routine-panels [data-routine]{transition:opacity .45s ease, transform .45s cubic-bezier(.22,1,.36,1)}
-  .routine-panels [data-routine].leaving{position:absolute;top:0;left:0;right:0;opacity:0;transform:translateY(8px);pointer-events:none}
-  .routine-panels [data-routine].entering{opacity:0;transform:translateY(-8px)}
+  .routine-panels [data-routine]{transition:opacity .4s ease}
+  .routine-panels [data-routine].leaving{position:absolute;top:0;left:0;right:0;opacity:0;pointer-events:none}
+  .routine-panels [data-routine].entering{opacity:0}
   .rstep{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.55)}
   .rstep:last-child{border-bottom:none}
   .rstep .n{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.65);color:var(--sage);
