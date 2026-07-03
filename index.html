@@ -130,11 +130,20 @@
   .routine-list li::before{content:"✓";color:var(--sage);font-weight:700}
   .routine-card{padding:28px}
   .routine-card h3{font-size:1.1rem;margin-bottom:18px}
-  .toggle{display:flex;background:rgba(255,255,255,.4);border-radius:999px;padding:4px;margin-bottom:20px;border:1px solid var(--glass-border)}
-  .toggle button{flex:1;border:none;background:transparent;padding:9px 0;border-radius:999px;
-    font-family:'Quicksand',sans-serif;font-weight:700;font-size:.88rem;color:#5E6E5F;cursor:pointer}
-  .toggle button.active{background:rgba(255,255,255,.85);color:var(--ink);box-shadow:0 2px 8px rgba(30,51,39,.12)}
+  .toggle{position:relative;display:flex;background:rgba(255,255,255,.4);border-radius:999px;padding:4px;margin-bottom:20px;border:1px solid var(--glass-border)}
+  .toggle .pill{position:absolute;top:4px;left:4px;width:calc(50% - 4px);height:calc(100% - 8px);
+    border-radius:999px;background:rgba(255,255,255,.85);box-shadow:0 2px 8px rgba(30,51,39,.12);
+    transform:translateX(0);transition:transform .5s cubic-bezier(.22,1,.36,1);z-index:0}
+  .toggle.pm .pill{transform:translateX(100%)}
+  .toggle button{position:relative;z-index:1;flex:1;border:none;background:transparent;padding:9px 0;border-radius:999px;
+    font-family:'Quicksand',sans-serif;font-weight:700;font-size:.88rem;color:#5E6E5F;cursor:pointer;
+    transition:color .4s ease}
+  .toggle button.active{color:var(--ink)}
   .toggle button:focus-visible{outline:2px solid var(--sage)}
+  .routine-panels{position:relative}
+  .routine-panels [data-routine]{transition:opacity .45s ease, transform .45s cubic-bezier(.22,1,.36,1)}
+  .routine-panels [data-routine].leaving{position:absolute;top:0;left:0;right:0;opacity:0;transform:translateY(8px);pointer-events:none}
+  .routine-panels [data-routine].entering{opacity:0;transform:translateY(-8px)}
   .rstep{display:flex;align-items:center;gap:14px;padding:12px 0;border-bottom:1px solid rgba(255,255,255,.55)}
   .rstep:last-child{border-bottom:none}
   .rstep .n{width:28px;height:28px;border-radius:50%;background:rgba(255,255,255,.65);color:var(--sage);
@@ -288,9 +297,11 @@
     <div class="routine-card glass reveal">
       <h3>Daily routine</h3>
       <div class="toggle" role="tablist" aria-label="Routine time">
+        <span class="pill" aria-hidden="true"></span>
         <button class="active" role="tab" aria-selected="true" data-t="am">Morning</button>
         <button role="tab" aria-selected="false" data-t="pm">Evening</button>
       </div>
+      <div class="routine-panels">
       <div data-routine="am">
         <div class="rstep"><span class="n">1</span><div><div class="t">Gentle fragrance-free cleanser</div><div class="c">Cleanser</div></div></div>
         <div class="rstep"><span class="n">2</span><div><div class="t">Niacinamide oil-control serum</div><div class="c">Serum</div></div></div>
@@ -301,6 +312,7 @@
         <div class="rstep"><span class="n">1</span><div><div class="t">Gentle fragrance-free cleanser</div><div class="c">Cleanser</div></div></div>
         <div class="rstep"><span class="n">2</span><div><div class="t">Bakuchiol renewing serum</div><div class="c">Treatment</div></div></div>
         <div class="rstep"><span class="n">3</span><div><div class="t">Barrier-repair night cream</div><div class="c">Moisturizer</div></div></div>
+      </div>
       </div>
     </div>
   </div>
@@ -676,18 +688,54 @@
     });
   });
 
-  /* ---------- AM/PM toggle ---------- */
-  document.querySelectorAll('.toggle button').forEach(b => {
-    b.addEventListener('click', () => {
-      document.querySelectorAll('.toggle button').forEach(x => {
-        x.classList.toggle('active', x === b);
-        x.setAttribute('aria-selected', x === b ? 'true' : 'false');
-      });
-      document.querySelectorAll('[data-routine]').forEach(p => {
-        p.hidden = p.dataset.routine !== b.dataset.t;
+  /* ---------- AM/PM toggle: smooth pill slide + crossfade ---------- */
+  (function(){
+    const toggle = document.querySelector('.toggle');
+    const buttons = document.querySelectorAll('.toggle button');
+    const panels = document.querySelectorAll('.routine-panels [data-routine]');
+    let current = 'am';
+    let animating = false;
+
+    function panelFor(t){ return [...panels].find(p => p.dataset.routine === t); }
+
+    buttons.forEach(b => {
+      b.addEventListener('click', () => {
+        const t = b.dataset.t;
+        if (t === current || animating) return;
+        animating = true;
+
+        // slide the pill + recolor labels
+        toggle.classList.toggle('pm', t === 'pm');
+        buttons.forEach(x => {
+          x.classList.toggle('active', x === b);
+          x.setAttribute('aria-selected', x === b ? 'true' : 'false');
+        });
+
+        const outgoing = panelFor(current);
+        const incoming = panelFor(t);
+
+        if (reduceMotion){
+          outgoing.hidden = true; incoming.hidden = false; current = t; animating = false; return;
+        }
+
+        // fade out current
+        outgoing.classList.add('leaving');
+        // prep incoming underneath, then fade/slide it in
+        incoming.hidden = false;
+        incoming.classList.add('entering');
+        requestAnimationFrame(() => {
+          requestAnimationFrame(() => { incoming.classList.remove('entering'); });
+        });
+
+        setTimeout(() => {
+          outgoing.hidden = true;
+          outgoing.classList.remove('leaving');
+          current = t;
+          animating = false;
+        }, 450);
       });
     });
-  });
+  })();
 })();
 </script>
 </body>
