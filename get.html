@@ -1,0 +1,540 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="robots" content="noindex, nofollow">
+<meta name="googlebot" content="noindex, nofollow">
+<title>opening solace…</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Gloock&family=Quicksand:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --forest:#3E6244;
+    --forest-deep:#2f6f57;
+    --cream:#FAF6EE;
+    --sage:#A9BFA8;
+    --ink:#26382C;
+    --muted:#7C8B7F;
+  }
+  *{box-sizing:border-box;}
+  html,body{height:100%;margin:0;}
+  body{
+    background:var(--cream);
+    color:var(--ink);
+    font-family:Quicksand,system-ui,-apple-system,sans-serif;
+    display:flex;align-items:center;justify-content:center;
+    padding:32px 24px calc(32px + env(safe-area-inset-bottom));
+    -webkit-font-smoothing:antialiased;
+  }
+  .wrap{width:100%;max-width:360px;text-align:center;}
+  .mark{width:52px;height:52px;margin:0 auto 22px;display:block;}
+  .mark path{fill:var(--forest);}
+  .mark .stem{stroke:var(--forest);stroke-width:5;fill:none;stroke-linecap:round;}
+  h1{
+    font-family:Gloock,Georgia,serif;font-weight:400;
+    font-size:32px;line-height:1.15;margin:0 0 10px;color:var(--forest-deep);
+  }
+  .status{
+    font-size:15px;line-height:1.55;color:var(--muted);margin:0;
+    min-height:44px;transition:color .2s ease;
+  }
+  .status.ready{color:var(--ink);}
+  .dots::after{
+    content:'';animation:dots 1.4s steps(4,end) infinite;
+  }
+  @keyframes dots{0%{content:'';}25%{content:'.';}50%{content:'..';}75%{content:'...';}}
+  .cta{
+    display:none;width:100%;margin:22px 0 0;padding:16px 20px;
+    background:var(--forest);color:var(--cream);
+    font-family:Quicksand,sans-serif;font-weight:600;font-size:16px;
+    border:0;border-radius:15px;cursor:pointer;text-decoration:none;
+  }
+  .cta:active{background:var(--forest-deep);}
+  .cta.show{display:block;animation:rise .3s ease both;}
+  @keyframes rise{from{opacity:0;transform:translateY(8px);}to{opacity:1;transform:none;}}
+  .foot{
+    margin:26px 0 0;font-size:12.5px;letter-spacing:.08em;
+    text-transform:uppercase;color:var(--sage);
+  }
+  @media(prefers-reduced-motion:reduce){
+    .cta.show{animation:none;}
+    .dots::after{animation:none;content:'...';}
+  }
+</style>
+</head>
+<body>
+  <main class="wrap">
+    <svg class="mark" viewBox="0 0 64 64" aria-hidden="true">
+      <path d="M32 30c0-9 5-15 13-17 1 9-3 16-13 17z"/>
+      <path d="M30 34c-8-1-13-6-14-14 8 1 13 6 14 14z"/>
+      <path d="M32 42c1-8 6-13 14-14-1 8-6 13-14 14z"/>
+      <path class="stem" d="M32 56V30"/>
+    </svg>
+
+    <h1>opening solace</h1>
+    <p class="status dots" id="status" aria-live="polite">sending you to the app store</p>
+
+    <button type="button" class="cta" id="cta" data-solace-store-link>open the app store</button>
+
+    <p class="foot">solace skin</p>
+  </main>
+
+<script>
+/*!
+ * solace-store-link.js
+ * One-tap App Store opening that survives Instagram / Facebook / Threads /
+ * Messenger / TikTok in-app browsers.
+ *
+ * Usage: add the script tag, then mark your CTA:
+ *   <a data-solace-store-link>download on the app store</a>
+ *
+ * Or manually:
+ *   SolaceStoreLink.attach(document.querySelector('#cta'));
+ *   SolaceStoreLink.open();            // fire from inside a click handler
+ */
+(function (root, factory) {
+  'use strict';
+  var api = factory();
+  if (typeof module === 'object' && module.exports) module.exports = api;
+  if (root) root.SolaceStoreLink = api;
+})(typeof globalThis !== 'undefined' ? globalThis : this, function () {
+  'use strict';
+
+  // ---------------------------------------------------------------------
+  // config
+  // ---------------------------------------------------------------------
+  var CONFIG = {
+    // RAW store URL. Never point this at a link that 301s — a redirect chain
+    // is what triggers the iOS "Open this page in App Store?" prompt.
+    iosStoreUrl: 'https://apps.apple.com/ph/app/solace-skin/id6781426862',
+    // No Android build yet. Set to a play.google.com URL when there is one.
+    androidStoreUrl: null,
+    homeUrl: 'https://mathieumarchis.github.io/solace-site/',
+    // How long to wait for an app switch before assuming the escape was eaten.
+    escapeTimeoutMs: 1500
+  };
+
+  function configure(overrides) {
+    for (var k in overrides) {
+      if (Object.prototype.hasOwnProperty.call(overrides, k)) CONFIG[k] = overrides[k];
+    }
+    return CONFIG;
+  }
+
+  // ---------------------------------------------------------------------
+  // UA helpers  (all accept an optional ua string so they are testable)
+  // ---------------------------------------------------------------------
+  function ua(input) {
+    if (typeof input === 'string') return input;
+    return (typeof navigator !== 'undefined' && navigator.userAgent) || '';
+  }
+
+  function isIOS(input) {
+    var s = ua(input);
+    if (/iPad|iPhone|iPod/i.test(s)) return true;
+    // iPadOS 13+ reports as desktop Safari
+    if (/Macintosh/i.test(s) && typeof navigator !== 'undefined' &&
+        navigator.maxTouchPoints > 1) return true;
+    return false;
+  }
+
+  function isAndroid(input) {
+    return /Android/i.test(ua(input));
+  }
+
+  // Instagram + Threads (Threads' webview identifies as "Barcelona")
+  function isInstagramInApp(input) {
+    return /Instagram/i.test(ua(input)) || /Barcelona/i.test(ua(input));
+  }
+
+  // Facebook, Facebook Lite, Messenger
+  function isFacebookInApp(input) {
+    return /FBAN|FBAV|FB_IAB|FBIOS|FB4A|Messenger|MessengerLite/i.test(ua(input));
+  }
+
+  function isTikTokInApp(input) {
+    return /BytedanceWebview|musical_ly|TikTok|Bytedance/i.test(ua(input));
+  }
+
+  function isSnapchatInApp(input) {
+    return /Snapchat/i.test(ua(input));
+  }
+
+  function isInAppBrowser(input) {
+    var s = ua(input);
+    return isInstagramInApp(s) || isFacebookInApp(s) || isTikTokInApp(s) ||
+      isSnapchatInApp(s) ||
+      /Line\/|MicroMessenger|WeChat|Twitter|LinkedInApp|Pinterest|GSA\//i.test(s);
+  }
+
+  // Meta's browsers are the only ones that silently block apps.apple.com.
+  // Everywhere else a direct <a href="apps.apple.com"> tap opens the store
+  // with no prompt, so we leave those alone.
+  function needsEscape(input) {
+    var s = ua(input);
+    if (isIOS(s)) return isInstagramInApp(s) || isFacebookInApp(s);
+    if (isAndroid(s)) return isInAppBrowser(s) && !!CONFIG.androidStoreUrl;
+    return false;
+  }
+
+  // ---------------------------------------------------------------------
+  // target resolution
+  // ---------------------------------------------------------------------
+  function storeUrl(input) {
+    var s = ua(input);
+    if (isAndroid(s)) return CONFIG.androidStoreUrl || CONFIG.homeUrl;
+    return CONFIG.iosStoreUrl;
+  }
+
+  // ---------------------------------------------------------------------
+  // escapes — every one of these must run SYNCHRONOUSLY inside the click
+  // handler. iOS drops custom-scheme navigations fired after an await or a
+  // setTimeout.
+  // ---------------------------------------------------------------------
+
+  // Instagram / Threads on iOS: the app intercepts this scheme and hands the
+  // URL to Safari. Works on page load and from a click handler.
+  function escapeInstagram(url) {
+    window.location.href = 'instagram://extbrowser/?url=' + encodeURIComponent(url);
+  }
+
+  // Facebook / Messenger on iOS: gesture-only.
+  function escapeFacebook(url) {
+    window.open('x-safari-' + url, '_blank');
+  }
+
+  // Android webviews follow intent:// fine.
+  function escapeAndroid(url) {
+    window.location.href = 'intent://' + url.replace(/^https?:\/\//, '') +
+      '#Intent;scheme=https;end';
+  }
+
+  /**
+   * Fire the correct escape for the current browser.
+   * Returns true if an escape was fired, false if the caller should just let
+   * a normal link navigation happen.
+   */
+  function open(opts) {
+    opts = opts || {};
+    var url = opts.url || storeUrl();
+    if (!needsEscape()) return false;
+
+    if (isIOS()) {
+      if (isInstagramInApp()) escapeInstagram(url);
+      else escapeFacebook(url);
+    } else {
+      escapeAndroid(url);
+    }
+    watchForAppSwitch(url);
+    return true;
+  }
+
+  // ---------------------------------------------------------------------
+  // did it actually leave? if the page never backgrounds, the escape was eaten
+  // ---------------------------------------------------------------------
+  function watchForAppSwitch(url) {
+    var settled = false;
+
+    function settle() {
+      if (settled) return;
+      settled = true;
+      teardown();
+    }
+
+    function onVisibility() { if (document.hidden) settle(); }
+
+    function teardown() {
+      document.removeEventListener('visibilitychange', onVisibility);
+      window.removeEventListener('pagehide', settle);
+      window.removeEventListener('blur', settle);
+    }
+
+    document.addEventListener('visibilitychange', onVisibility);
+    window.addEventListener('pagehide', settle);
+    window.addEventListener('blur', settle);
+
+    setTimeout(function () {
+      if (settled || document.hidden) { teardown(); return; }
+      teardown();
+      showFallback(url);
+    }, CONFIG.escapeTimeoutMs);
+  }
+
+  // ---------------------------------------------------------------------
+  // fallback modal
+  // ---------------------------------------------------------------------
+  var STYLE_ID = 'solace-store-link-style';
+
+  var CSS = [
+    '@import url("https://fonts.googleapis.com/css2?family=Gloock&family=Quicksand:wght@400;500;600&display=swap");',
+    '.sl-overlay{position:fixed;inset:0;z-index:2147483000;display:flex;align-items:flex-end;',
+    'justify-content:center;background:rgba(24,38,28,.55);backdrop-filter:blur(3px);',
+    'opacity:0;transition:opacity .22s ease;font-family:Quicksand,system-ui,sans-serif;}',
+    '.sl-overlay.sl-in{opacity:1;}',
+    '.sl-sheet{width:100%;max-width:420px;background:#FAF6EE;color:#26382C;',
+    'border-radius:22px 22px 0 0;padding:26px 24px calc(26px + env(safe-area-inset-bottom));',
+    'transform:translateY(14px);transition:transform .22s ease;box-shadow:0 -8px 40px rgba(0,0,0,.22);}',
+    '.sl-overlay.sl-in .sl-sheet{transform:translateY(0);}',
+    '@media(min-width:520px){.sl-overlay{align-items:center;}.sl-sheet{border-radius:22px;}}',
+    '.sl-title{font-family:Gloock,Georgia,serif;font-size:25px;line-height:1.2;margin:0 0 8px;color:#2f6f57;}',
+    '.sl-body{font-size:15px;line-height:1.55;margin:0 0 18px;color:#4A5A4E;}',
+    '.sl-btn{display:block;width:100%;box-sizing:border-box;text-align:center;cursor:pointer;',
+    'font-family:Quicksand,sans-serif;font-weight:600;font-size:16px;padding:15px 18px;',
+    'border-radius:14px;border:0;margin-bottom:10px;text-decoration:none;}',
+    '.sl-btn-primary{background:#3E6244;color:#FAF6EE;}',
+    '.sl-btn-primary:active{background:#2f6f57;}',
+    '.sl-btn-ghost{background:transparent;color:#3E6244;border:1.5px solid rgba(62,98,68,.32);}',
+    '.sl-steps{margin:16px 0 18px;padding:14px 16px;background:rgba(62,98,68,.07);border-radius:14px;}',
+    '.sl-steps p{margin:0 0 6px;font-size:13.5px;color:#4A5A4E;line-height:1.5;}',
+    '.sl-steps p:last-child{margin-bottom:0;}',
+    '.sl-steps b{color:#2f6f57;font-weight:600;}',
+    '.sl-dismiss{display:block;width:100%;background:none;border:0;padding:8px;cursor:pointer;',
+    'font-family:Quicksand,sans-serif;font-size:13.5px;color:#8A968C;}',
+    '@media(prefers-reduced-motion:reduce){.sl-overlay,.sl-sheet{transition:none;}}'
+  ].join('');
+
+  function injectStyle() {
+    if (document.getElementById(STYLE_ID)) return;
+    var s = document.createElement('style');
+    s.id = STYLE_ID;
+    s.textContent = CSS;
+    document.head.appendChild(s);
+  }
+
+  function menuHint() {
+    if (isInstagramInApp()) return 'tap the <b>•••</b> in the top right, then <b>open in external browser</b>';
+    if (isFacebookInApp()) return 'tap the <b>•••</b> in the top right, then <b>open in browser</b>';
+    return 'tap the browser menu, then <b>open in browser</b>';
+  }
+
+  function copyToClipboard(text) {
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      return navigator.clipboard.writeText(text);
+    }
+    var ta = document.createElement('textarea');
+    ta.value = text;
+    ta.setAttribute('readonly', '');
+    ta.style.position = 'fixed';
+    ta.style.opacity = '0';
+    document.body.appendChild(ta);
+    ta.select();
+    try { document.execCommand('copy'); } catch { /* clipboard blocked */ }
+    document.body.removeChild(ta);
+    return Promise.resolve();
+  }
+
+  var overlayEl = null;
+
+  function closeFallback() {
+    if (!overlayEl) return;
+    var el = overlayEl;
+    overlayEl = null;
+    el.classList.remove('sl-in');
+    setTimeout(function () { if (el.parentNode) el.parentNode.removeChild(el); }, 220);
+  }
+
+  function showFallback(url) {
+    if (overlayEl) return;
+    injectStyle();
+    url = url || storeUrl();
+
+    var overlay = document.createElement('div');
+    overlay.className = 'sl-overlay';
+    overlay.setAttribute('role', 'dialog');
+    overlay.setAttribute('aria-modal', 'true');
+    overlay.setAttribute('aria-label', 'open solace in the app store');
+
+    var sheet = document.createElement('div');
+    sheet.className = 'sl-sheet';
+    sheet.innerHTML =
+      '<h2 class="sl-title">one more tap</h2>' +
+      '<p class="sl-body">instagram is holding onto this page. try again below — ' +
+      'or open it in your normal browser.</p>' +
+      '<button type="button" class="sl-btn sl-btn-primary" data-sl-retry>try again</button>' +
+      '<button type="button" class="sl-btn sl-btn-ghost" data-sl-copy>copy link</button>' +
+      '<div class="sl-steps"><p><b>1.</b> ' + menuHint() + '</p>' +
+      '<p><b>2.</b> paste the link and hit go</p></div>' +
+      '<button type="button" class="sl-dismiss" data-sl-close>close</button>';
+
+    overlay.appendChild(sheet);
+    overlay.addEventListener('click', function (e) {
+      if (e.target === overlay) closeFallback();
+    });
+    document.body.appendChild(overlay);
+    requestAnimationFrame(function () { overlay.classList.add('sl-in'); });
+    overlayEl = overlay;
+
+    sheet.querySelector('[data-sl-retry]').addEventListener('click', function () {
+      // synchronous — still inside the gesture
+      if (isIOS() && isInstagramInApp()) escapeInstagram(url);
+      else if (isIOS()) escapeFacebook(url);
+      else if (isAndroid()) escapeAndroid(url);
+      else window.location.href = url;
+    });
+
+    var copyBtn = sheet.querySelector('[data-sl-copy]');
+    copyBtn.addEventListener('click', function () {
+      copyToClipboard(url);
+      copyBtn.textContent = 'copied';
+      setTimeout(function () { copyBtn.textContent = 'copy link'; }, 1800);
+    });
+
+    sheet.querySelector('[data-sl-close]').addEventListener('click', closeFallback);
+    sheet.querySelector('[data-sl-retry]').focus();
+  }
+
+  // ---------------------------------------------------------------------
+  // <a> wrapper
+  // ---------------------------------------------------------------------
+  function handleClick(e) {
+    if (e.defaultPrevented || e.metaKey || e.ctrlKey || e.button === 1) return;
+    var url = this.getAttribute('data-solace-url') || storeUrl();
+    if (!needsEscape()) return;   // normal browsers: let the real href work
+    e.preventDefault();
+    open({ url: url });
+  }
+
+  function attach(el, opts) {
+    if (!el || el.__solaceBound) return el;
+    opts = opts || {};
+    var url = opts.url || storeUrl();
+    el.setAttribute('href', url);
+    el.setAttribute('data-solace-url', url);
+    if (el.tagName === 'A' && !el.hasAttribute('rel')) el.setAttribute('rel', 'noopener');
+    el.addEventListener('click', handleClick);
+    el.__solaceBound = true;
+    return el;
+  }
+
+  function attachAll(selector) {
+    var nodes = document.querySelectorAll(selector || '[data-solace-store-link]');
+    for (var i = 0; i < nodes.length; i++) attach(nodes[i]);
+    return nodes.length;
+  }
+
+  function autoInit() {
+    if (typeof document === 'undefined') return;
+    if (document.readyState === 'loading') {
+      document.addEventListener('DOMContentLoaded', function () { attachAll(); });
+    } else {
+      attachAll();
+    }
+  }
+  autoInit();
+
+  return {
+    CONFIG: CONFIG,
+    configure: configure,
+    isIOS: isIOS,
+    isAndroid: isAndroid,
+    isInstagramInApp: isInstagramInApp,
+    isFacebookInApp: isFacebookInApp,
+    isTikTokInApp: isTikTokInApp,
+    isSnapchatInApp: isSnapchatInApp,
+    isInAppBrowser: isInAppBrowser,
+    needsEscape: needsEscape,
+    storeUrl: storeUrl,
+    escapeInstagram: escapeInstagram,
+    escapeFacebook: escapeFacebook,
+    escapeAndroid: escapeAndroid,
+    open: open,
+    attach: attach,
+    attachAll: attachAll,
+    showFallback: showFallback,
+    closeFallback: closeFallback
+  };
+});
+
+</script>
+<script>
+(function () {
+  'use strict';
+
+  var S = window.SolaceStoreLink;
+
+  // RAW store URL — the zero-prompt path. Do not swap this for a link that
+  // 301s; a redirect chain is what makes iOS show "Open this page in App Store?".
+  var STORE_URL = 'https://apps.apple.com/ph/app/solace-skin/id6781426862';
+  var HOME_URL  = 'https://mathieumarchis.github.io/solace-site/';
+
+  // Per-channel attribution links. No OneLink/Branch yet, so every channel
+  // resolves to the raw store URL and the click beacon stays off. When you add
+  // an MMP, drop the per-channel URLs in here and the beacon turns itself on.
+  var CHANNELS = {
+    ig:        STORE_URL,
+    instagram: STORE_URL,
+    tt:        STORE_URL,
+    tiktok:    STORE_URL,
+    li:        STORE_URL,
+    linkedin:  STORE_URL,
+    yt:        STORE_URL,
+    snap:      STORE_URL,
+    x:         STORE_URL
+  };
+  var DEFAULT_LINK = STORE_URL;   // neutral — never defaults to one channel
+
+  function param(name) {
+    var m = new RegExp('[?&]' + name + '=([^&#]*)').exec(window.location.search);
+    return m ? decodeURIComponent(m[1].replace(/\+/g, ' ')).toLowerCase() : '';
+  }
+
+  var src = param('src');
+  var link = (src && CHANNELS[src]) || DEFAULT_LINK;
+  var attributed = link !== STORE_URL;
+
+  var statusEl = document.getElementById('status');
+  var ctaEl = document.getElementById('cta');
+
+  S.configure({ iosStoreUrl: STORE_URL, homeUrl: HOME_URL });
+  S.attach(ctaEl, { url: STORE_URL });
+
+  function offerManualTap(message) {
+    statusEl.classList.remove('dots');
+    statusEl.classList.add('ready');
+    statusEl.textContent = message || 'almost there — tap below to finish';
+    ctaEl.classList.add('show');
+  }
+
+  // Fires a click beacon only when there is a real attribution link to credit.
+  function beacon(url) {
+    try {
+      fetch(url, { mode: 'no-cors', keepalive: true }).catch(function () {});
+    } catch (e) { /* ignore */ }
+  }
+
+  var isMobile = S.isIOS() || S.isAndroid();
+
+  if (!isMobile) {
+    // desktop — send to the App Store listing too
+    window.location.replace(STORE_URL);
+    return;
+  }
+
+  if (S.isIOS() && S.isInstagramInApp()) {
+    // Instagram / Threads: credit the click, then hand Safari the RAW store URL.
+    if (attributed) beacon(link);
+    S.escapeInstagram(STORE_URL);
+  } else if (S.isIOS() && S.isFacebookInApp()) {
+    // Facebook / Messenger only honour x-safari- inside a real gesture, so
+    // there is no gesture-free path here. Go straight to the manual tap.
+    offerManualTap('tap below to open the app store');
+  } else {
+    // Android and every non-Meta mobile browser: a plain navigation lands fine.
+    window.location.replace(link);
+  }
+
+  // The page is its own fallback.
+  setTimeout(function () {
+    if (document.hidden) return;
+    offerManualTap();
+  }, 1800);
+
+  ['pagehide', 'blur'].forEach(function (evt) {
+    window.addEventListener(evt, function () { statusEl.classList.remove('dots'); });
+  });
+})();
+</script>
+</body>
+</html>
